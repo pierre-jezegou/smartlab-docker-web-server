@@ -1,0 +1,9 @@
+version: '3.8'
+services:
+  web:
+    container_name: WEBSITE
+    build: /home/docker-manager/.creation_site/
+    volumes:
+      - ./website/:/var/www/html/
+    ports:
+      - PORT:80
