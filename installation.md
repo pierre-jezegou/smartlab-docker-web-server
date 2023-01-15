@@ -1,12 +1,21 @@
-# Mise en place du serveur Web
+# Mise en place du serveur
 
 ## Installation de Linux
-Installation de Linux via *Raspberry Pi Imager*. Set up du ssh etd et des comptes :
+Installation de Linux via *Raspberry Pi Imager*. Set up du ssh et et des comptes utilisateur :
 - identifiant : `docker-manager`
 - Mot de passe : `**********`
 
-Configuration réseau : configuration de l'adresse IPv4 statique. On se connecte donc au serveur (via ssh) avec la commande `ssh docker-manager@192.168.0.100`
-> On peur trouver l'adresse IP que le serveur a pris en se branchant dessus, ou bien en lançant un scan nmap du réseau `nmap 192.168.0.0/24`
+> Pour générer un mot de passe, on peut utilsier la commande `pwgen` avec ses différentes options.
+
+## Configuration réseau
+La configuration réseau du serveur dépend du réseau sur lequel le serveur va se trouver.
+
+### Configuration IP statique
+Il peut être pratique de forcer la configuration de l'adresse IPv4 statique.
+Cela permet de pouvoir pointer directement sur le serveur avec son IP, et de ne pas le perdre (l'IP étant fixe).
+
+On se connecte donc au serveur (via ssh) avec la commande `ssh docker-manager@192.168.0.100`
+> On peur trouver l'adresse IP que le serveur a pris en se branchant dessus, ou bien en lançant un scan nmap du réseau avec la commande `nmap 192.168.0.0/24`
 
 On modifie le fichier de configuration des interfaces :
 ```shell
@@ -19,7 +28,9 @@ iface eth0 inet static
   netmask 255.255.255.0
   gateway 192.168.0.1
 ```
-On relance ensuite le service r&seau : `sudo systemctl restart networking``
+> Il est possible que l'interface ne s'appelle pas `eth0`. On peut trouver son nom dans le output de la commande `ip a`.
+
+On relance ensuite le service réseau : `sudo systemctl restart networking`
 
 On peut vérifier si l'adresse IP  bien été changée avec la commande `ip a`
 
@@ -27,7 +38,7 @@ On peut vérifier si l'adresse IP  bien été changée avec la commande `ip a`
 Les informations d'installation sont mentionnées sur le site de Docker : https://docs.docker.com/engine/install/debian/
 On suit donc le tutoriel.
 
-```
+```bash
 sudo apt-get update
 sudo apt-get install \
     ca-certificates \
@@ -48,6 +59,10 @@ Ensuite, on ajoute l'utilisateur *docker-manager* au groupe docke rpour qu'il pu
 sudo usermod -aG docker docker-manager
 ```
 
+## Création d'un compte utilisateur
+On doit créer un compte utilisateur avec des droits limoités pour que l'utilisateur dépose en sécurité les fichiers sur le serveur. On doit donc lui créer :
+- Un dossier home avec les autorisations dessus
+- Un 
 
 ## Installation de phpmyadmin et php
 ### Installation d'Apache
@@ -78,6 +93,82 @@ On modifie la ligne contenant le `bind-address=127.0.0.1` en
 bind-address=0.0.0.0
 ```
 
+
+
+# Création des conteneurs
+## Docker pour un conteneur en PHP
+On propose d'utiliser un docker-compose pour sa simplicité d'utilisation :
+- On crée un service `web` pour lequel :
+  - On donne un nom
+  - On donne une image (ici on donne une image personnalisée avec le Dockerfile)
+  - On programme le conteneur pour redémarrer à chaque fois qu'il s'éteint
+  - On monte un volume extérieur pour la persistance des données
+  On expose le port 80 à l'xtérieur du conteneur
+```yaml
+version: '3.8'
+services:
+  web:
+    container_name: smartlab
+    build: /home/docker-manager/creation_site/
+    restart: always
+    volumes:
+      - ./website/:/var/www/html/
+    ports:
+      - 8080:80
+```
+
+On doit cependant personnaliser l'image php car l'image de base ne comprend pas l'utilisation de PDO par exemple. Voici donc le Dockerfile :
+```docker
+FROM php:7.3-apache
+# Install stuff
+RUN apt-get update && apt-get upgrade -y && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install sudo unzip wget -y && rm -rf /var/lib/apt/lists/*
+RUN docker-php-ext-install mysqli pdo pdo_mysql
+# Configure stuff
+RUN a2enmod rewrite
+```
+- On n'oublie pas de vider le cache pour avoir une image docker plus petite à la fin. On peut retrouver plein d'informations dans la section *'Bonnes pratiques'* de la documentation Docker.
+
+## Docker pour un conteneur en Python
+Pour un conteneur en Python, les étapes sont environ les mêmes. En plus, on crée un `venv`pour installer les dépendances python.
+```yaml
+version: '3.8'
+services:
+  api:
+    container_name: mail
+    build: .
+    restart: always
+    ports:
+      - 8000:8000
+    volumes:
+      - ./templates/:/templates
+
+```
+Et voici le Dockerfile adapté (pour créer une image personnalisée pour rappel).
+```docker
+FROM python:3.9-slim
+
+ENV VIRTUAL_ENV=/opt/venv
+RUN python3 -m venv $VIRTUAL_ENV
+ENV PATH="$VIRTUAL_ENV/bin:$PATH"
+
+WORKDIR /app
+# Install dependencies:
+COPY requirements.txt .
+RUN pip install -r requirements.txt --no-cache-dir
+
+#Copytemplate files
+COPY templates ./templates
+
+# Run the application:
+COPY main.py .
+COPY script.py .
+CMD uvicorn main:app --host 0.0.0.0
+```
+> *Ces fichiers (docker-compose et Dockerfile) donc personnalisés pour l'utilisation désirée dans le cadre du projet, mais les grandes étapes sont similaires quel que soit le projet.*
+
+
+<!-- 
 # Création d'un script de création de conteneurs
 Structure du projet :
 - Racine avec les fichiers :
@@ -158,4 +249,4 @@ On crée un utilisateur qui pourra seulement intéragir avec le dossier où se t
 ```
 sudo groupadd smartlab
 ```
-- Ensuite
+- Ensuite -->
